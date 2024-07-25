@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>understanding the raft algorithm</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="container">
+    <b>understanding of the raft algorithm</b>
+    <hr>
+    <p>This article is going to go over the raft algorithm that can be found in this paper:</p>
+    <a style="display: flex; justify-content: center" href="https://raft.github.io/raft.pdf">In Search of an Understandable Consensus Algorithm</a>
+    <p>
+        Raft is a consensus algorithm for building and managing reliable large scale systems with many nodes. Nodes being a server, computer, etc.
+        It's known to more understandable and just as efficient as its predecessor, Paxos which has a reputation for being difficult to understand and implement.
+    </p>
+    <div id="table-of-contents">
+        <h4>Table of Contents</h4>
+        <ul>
+            <li><a href="#why-use-raft">why use raft</a></li>
+            <li><a href="#the-raft-algorithm">the raft algorithm</a></li>
+            <li><a href="#the-basics">the basics</a></li>
+            <li><a href="#the-election">the election</a></li>
+            <li><a href="#the-log-replication">the log replication</a></li>
+            <li><a href="#handling-inconsistencies">handling inconsistencies</a></li>
+            <li><a href="#election-safety">election safety</a></li>
+            <li><a href="#configuration-changes">configuration changes</a></li>
+        </ul>
+    </div>
+    <h4 id="why-use-raft" style="text-decoration: underline">why use raft</h4>
+    <p>A use case for Raft could be - coordinating a database with multiple servers.</p>
+    <p>A common problem in the real world is a company scaling a database. At the beginning, you only need one server with the database, however, when the load for the database get too high
+        the performance will start slowing down. As a result, the company needs another server that can handle the load along with the original server.
+    </p>
+    <p>
+        Now with the added server, we have so many different problems to solve:
+    </p>
+    <ul>
+        <li>How do we make sure that all the servers have the same data to stay <span class="key-word">consistent</span>?</li>
+        <li>How can we make sure that if one of the servers fail, that we can easily replace the server to create a <span class="key-word">available</span> and <span class="key-word">fault-tolerant system?</span></li>
+        <li>How can we make sure that if we need to <span class="key-word">scale</span>, we can easily add one server into the system without turning off system?</li>
+    </ul>
+
+    <h4 id="the-raft-algorithm" style="text-decoration: underline">the raft algorithm</h4>
+    <p>The Raft Algorithm tries to solve these problems by following these principles:</p>
+    <ul>
+        <li><span style="text-decoration: underline">Strong leader Selection</span>: There is one leader server with the other servers being classified as followers. This way all the logs entries from the client
+            flow only to the leader then to the followers. This simplifies the management of the logs in the system and keeps it consistent.
+        </li>
+        <li><span style="text-decoration: underline">Leader Election</span>: When a new leader is needed, Raft uses randomized timers on its followers and whichever follower finishes its timer first can be elected
+        and voted on by the other followers.
+        </li>
+        <li> <span style="text-decoration: underline">Membership Changes</span>: When a new set of servers comes into the system, Raft uses a majority vote for the new
+            configuration.
+        </li>
+    </ul>
+    <p>
+        A common word that is used when talking about this algorithm is the concept of a log. The log can be thought of as the command or history of commands given
+        to a node in the system. For example, this could be the data to be stored in a database or cache. This means that each node in the system should
+        have the same sequence of logs, leading to the same state in each node.
+    </p>
+
+    <h4 id="the-basics" style="text-decoration: underline">the basics</h4>
+    <p>Raft clusters usually contain five servers which allow two failures. This is because Raft uses a majority vote system and having three nodes would result
+    in a indefinite spit decision.</p>
+    <p>Each node in the system can only be in one of three different states:</p>
+    <ul>
+        <li>Leader</li>
+        <li>Follower</li>
+        <li>Candidate</li>
+    </ul>
+
+    <p>The Leader can be thought as the manager of the system. Any time a client makes a request to the cluster, it goes through the leader. Their job is handle all requests and make sure to send
+    the logs to his followers.</p>
+    <p>The Follower is passive. It does not handle any requests from the client and only responds to the Leader.</p>
+    <p>The Candidate is used to elect a new leader during each new term.</p>
+    <p>The duration in which a leader lives is called a term. Whenever a leader fails, a new leader needs to be selected and a new term begins. Terms are represented as consecutive integers (ex: 1, 2, 3)
+    and are started by an election.</p>
+    <p>When a election starts, followers can become candidates and multiple candidates can attempt to become the new leader.</p>
+
+    <h4 id="the-election" style="text-decoration: underline">the election</h4>
+
+    <p>Raft uses a heartbeat Remote Procedure Call (RPC) to trigger an election.</p>
+    <p>When a server starts up, it begins as a follower. The server remains a follower until it receives a heartbeat RPC from a leader or candidate.</p>
+    <p>If it doesn't receive any communication over a period of time called the election timeout, then it assumes there is no leader and begins an election for a new leader.</p>
+    <p>The procedure for an election follows a simple order:</p>
+    <ol>
+        <li>Increment the current term and transition to a candidate state</li>
+        <li>Vote for yourself in the election and send a RPC to the other servers to request a vote</li>
+    </ol>
+    <p>There are only three possible outcomes to the election as a server:</p>
+    <ul>
+        <li>Candidate wins the election</li>
+        <li>Another Candidate wins the election</li>
+        <li>There is no winner to the election</li>
+    </ul>
+    <p>
+        A candidate wins the election if it receives votes from a majority of the servers from the same term. A server votes on a first-come-first-serve basis meaning that whichever candidate
+        sends the request for the vote first, receives the vote from that follower. Once a candidate wins an election, it sends a heartbeat RPC to the followers to establish itself as the leader.
+    </p>
+    <p>
+        While waiting for votes, it may receive the heartbeat RPC from a node whether it be a candidate or leader. The candidate must check if the term of that node is greater than or
+        equal to its current term. If it is greater than or equal to, the node will recognize that node as the leader. If it is smaller, the node will reject that node's request.
+    </p>
+    <p>
+        If many servers become candidates at the same time, then there is a chance of no server winning the election. When this happens, each of the candidates will timeout and start a new election and
+        increment its term.
+    </p>
+    <p>
+        In order to prevent indefinite elections, each election timeout is randomized between an interval of 150-300ms. This way each server's timeouts are spaced out from each other and it is less likely
+        that two servers run become leaders at the same time, splitting the election votes.
+    </p>
+
+    <h3>Make election animation here</h3>
+
+    <h4 id="the-log-replication" style="text-decoration: underline">the log replication</h4>
+    <p>Logs are the history of commands that the machine has received and determine the current state of the machine.</p>
+    <p>Logs consist of individual entries which have three main variables:</p>
+    <ul>
+        <li>Index</li>
+        <li>Term</li>
+        <li>Command</li>
+    </ul>
+    <div style="display: flex; width: 100%; justify-content: center">
+        <img src="static/Entry.png" alt="Entry Diagram" style="max-width: 30%; height: auto; justify-content: center"/>
+    </div>
+    <p>The Index is the order in which that entry came into the log and are numbered sequentially.</p>
+    <p>The Term is the term of the current leader.</p>
+    <p>The Command is the command that the machine should process.</p>
+    <p>Now comes how the system processes commands through log replication:</p>
+    <ol>
+        <li>
+            Command arrives to the leader from the client.
+        </li>
+        <li>
+            The leader appends the command to its own log, but doesn't execute the command yet.
+        </li>
+        <li>
+            The leader sends the command to all its followers.
+        </li>
+        <li>
+            The followers receive the command and append it to their own log and executes the command.
+            <ol type="a">
+                <li>If the follower is down, the leader will keep retrying the log indefinitely until it eventually receives it.</li>
+            </ol>
+        </li>
+        <li>
+            After appending and executing the log, they send a message back to the follower that they have executed.
+        </li>
+        <li>
+            Once the majority of the followers have executed the command, the leader now executes the command on its own machine.
+        </li>
+        <li>
+            After executing, the leader sends a response back to the client. That log is now known as a committed log.
+        </li>
+    </ol>
+    <p>This is an example of a log after a series of commands:</p>
+    <div style="display: flex; width: 100%; justify-content: center">
+        <img src="static/Log.png" alt="Entry Diagram" style="height: auto; justify-content: center"/>
+    </div>
+
+    <p>By following these order of operations, the leader can guarantee that the committed entries and durable and will eventually be executed by all the available machines.</p>
+    <p>It's important to emphasize that the leader will always have at most one entry with a given log index in a given term, and the log entries never change their position.</p>
+
+    <h4 id="handling-inconsistencies" style="text-decoration: underline">handling inconsistencies</h4>
+    <p>The way the leader will know when these inconsistencies happen is through a consistency check.</p>
+    <p>The leader will have a nextIndex for each follower containing the next index of its latest log's index.</p>
+    <p>Every heartbeat to a follower will have the followers expected nextIndex and if the index of the follower doesn't match it, the consistency check will fail.</p>
+    <p>As a result of that, when inconsistencies occur - an overwriting process occurs:</p>
+    <ol>
+        <li>Leader will find the latest log entry where the leader and follower agree, then delete every log in the follower after that point.</li>
+        <li>Leader will then send all the log entries after that point to the follower.</li>
+    </ol>
+    <p>So now if the consistency checks fails when the leader sends logs down to the followers, the leader will decrement the nextIndex counter for that follower and keep trying until the index
+    is consistent with each other.</p>
+    <p>This methodology leaves the leader away from any special actions to restore consistency as it will naturally converge together.</p>
+    <h4 id="election-safety" style="text-decoration: underline">election safety</h4>
+    <p>Now that we can handle inconsistencies by overwriting logs, this leaves us vulnerable to overwriting entries that should be commited.</p>
+    <p>For example: if a follower could be unavailable when the leader commits entries, but then later becomes leader and overwrites those entries from other followers.</p>
+    <p>In order to prevent this, we create a restriction in the election process to only select leaders who are up-to-date on all the entries.</p>
+    <p>During the voting process, the candidate can only be elected unless it contains all the committed entries. </p>
+    <p>Because the candidate has to contact a majority of the followers, the majority of the entries must be inside at least one of the servers.</p>
+    <p>This means that at least one of the servers must have the latest index and term of the log.</p>
+    <p>If the candidate's log is up-to-date with those servers, then it can be elected.</p>
+    <p>This guarantees that the leader that will be elected is up-to-date with the latest index and term.</p>
+
+    <h4 id="configuration-changes" style="text-decoration: underline">configuration changes</h4>
+
+</div>
+
+</body>
+</html>

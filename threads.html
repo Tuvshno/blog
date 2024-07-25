@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <link rel="stylesheet" href="styles.css"/>
+    <title>threads, concurrency, and race problems</title>
+</head>
+<body>
+<div class="container">
+    <b>threads, concurrency, and race problems</b>
+    <hr/>
+    <p>
+        I watched a Distributed Systems MIT Lecture on Threads and I wanted to go over the concepts and possibly add some additional insights on the topic to make it more digestible.
+    </p>
+    <a class="center" href="https://www.youtube.com/watch?v=gA4YXUJX7t8&ab_channel=MIT6.824%3ADistributedSystems">Lecture 2: RPC and Threads</a>
+    <p>Random side note, even though its labeled "RPC and Threads", there wasn't much talk about RPCs. No fault of the lecturer Robert Morris, he did an excellent job pacing and explaining the concepts
+    of the lecture. It was the excellent questions of the students who dissected the concepts and dived deep into what was being taught, which really questioned and solidified my understanding
+    of the concepts though it chewed into lecture time.
+    </p>
+
+    <b>the thread</b>
+
+    <p>Though you may already understand the concept of a thread, I want to try reiterating it in my own words: </p>
+    <p>A thread can be thought of as a worker inside of a company. </p>
+    <p>The Operating System (OS) allocates a section of memory for the program/process (the company).</p>
+    <p>In that section of address space (memory), the process (company) has free rain to do what it wants such as to hire workers. </p>
+    <p>When the process needs work done, it can call on multiple threads (workers). </p>
+    <p>Each thread has its own stack and can work on its own. </p>
+    <p>Through the OS's Scheduler, all the threads can be run concurrently aka in such as rapid sequence, it seems they are being run at the same time. </p>
+    <p>Because all the threads exist inside the same process, they have access to the same data and can work together. </p>
+
+    <b>the race conditions</b>
+
+    <p>Because multiple threads have access to the same data, problems can occur when multiple threads are trying to read or write to that shared data.</p>
+    <p>This is known as a race condition.</p>
+    <p>Lets say for example two threads are accessing the same data N:</p>
+    <p>The initial value of N is 0: N = 0</p>
+    <p>Thread one is incrementing N by 1 : N = N + 1</p>
+    <p>Thread two is incrementing N by 1 : N = N + 1</p>
+    <p>If both threads are accessing N at the same time, they will both load N = 0 then increment N by one, leading to N = 1. </p>
+    <p>In the end, both threads will leave N with the value of one.</p>
+    <p>The intention of the programmer would have been that N should equal two. However, because both threads were able to access the shared data at the same time, it caused the threads to operate in
+        an undesirable way.
+    </p>
+
+    <b>the lock and unlock</b>
+    <p>In order to fix this problem of accessing shared data between threads, we need to enforce a rule that:</p>
+    <p>If one thead is accessing shared data, no other thread can access it until the other thread is done. </p>
+    <p>In Go, this concept is known as the Mutex or Mutual Exclusion.</p>
+    <p>Mutexes have the ability to lock and unlock themselves which can make sure that shared data is only being accessed by one thread.</p>
+    <p>Here is an example of it being implemented in a Cache:</p>
+    <div class="code-container">
+        <div class="code-title">mutex.go</div>
+        <div class="code-block">
+            <pre>
+<code>
+    type Cache struct {
+        lock sync.RWMutex
+        data map[string][]byte
+    }
+
+    func(c *Cache) Get(key string) ([]byte, error) {
+        lock.Lock()
+        defer lock.Unlock()
+
+        value, ok := data[key]
+
+        if !ok {
+            return nil, err
+        }
+
+        return value, nil
+    }
+
+    func (c *Cache) Set(key string, value []byte) error {
+        lock.Lock()
+        defer lock.Unlock()
+
+        data[key] = value
+
+        return nil
+    }
+</code>
+            </pre>
+        </div>
+    </div>
+    <p>In this cache, multiple threads may try to access the same data inside the cache. However, by calling lock on the mutex, we make sure that the cache is unable to be accessed by another other
+    thread than the thread who called the lock.</p>
+
+    <b>the mutex</b>
+
+    <p>A common misunderstanding is that the mutex knows about the cache and specifically locks it from other threads. This is not the case.</p>
+    <p>You can think of the mutex as a gatekeeper to a room.</p>
+    <p>The mutex does not know about anything you put inside the room at all. It only knows that you have locked the room and therefore doesn't allow anyone else to enter the room.</p>
+    <p>So if we look at the implementation, only the Get and Set methods could possibly access the cache. However, before they access the cache, we request the mutex to lock.</p>
+    <p>If the mutex is already locked, then the thread needs to wait for the mutex to be unlocked for the mutex to lock itself again.</p>
+    <p>Therefore, the mutex itself is completely independent of the shared data that it is protecting. </p>
+    <p>If you are curious about the defer, it only executes the statement when the outer function is completely done running. So when the Get or Set method is finished. it calls any defer method.
+    It is usually used to close open connections or in this case to unlock the mutex for other threads.</p>
+
+    <b>the concurrency</b>
+    <p>With all this talk about threads, how do you even open a thread in Go?</p>
+    <p>Luckily in Go, it is very simple to open up a thread. They are called GoRoutines!</p>
+    <div class="code-container">
+        <div class="code-title">mutex.go</div>
+        <div class="code-block">
+            <pre>
+<code>
+
+    func launchThread() {
+        fmt.Println("this is a thread")
+    }
+
+    func main() {
+        for i := 0; i < 5; i++{
+            go launchThread()
+        }
+    }
+</code>
+            </pre>
+        </div>
+    </div>
+    <p>In this code snippet, you can launch a goroutine by writing "go" and a function that you want to run in the thread.</p>
+    <p>In this case, we will create five threads that will all print out "this is a thread" in the console.</p>
+
+    <b>the implementation</b>
+    <p>Now that we have the tools and understanding for implementing threads that can utilize shared data safely, we can try implementing a program that will access shared data and run multiple threads
+        concurrently.</p>
+    <p>In this example, we will try implementing a web crawler that will go to each link inside each link and print out all the unique links on a website.</p>
+    <p>The purpose is how to crawl the pages concurrently.</p>
+    <p style="text-decoration: underline">implementation details</p>
+    We want to make sure that we know what we are looking to implement here:
+    <ul>
+        <li>Look for all the links inside of a url</li>
+        <li>Make sure that each url is unique and we don't go to the same url twice</li>
+        <li>Go to the next link and repeat the cycle until all links have been crawled</li>
+    </ul>
+    <p>The details of how all the links on a page are obtained from each link is left out because that is not the purpose of the exercise.</p>
+    <p>We can solve the unique links problem by creating a set of all the links that we have crawled. Before we crawl to a new link, we check if that link has been already visited in the set.</p>
+    <p>What's interesting is how we can solve the problem of making sure that we have finished crawling in a concurrent setting where we have multiple threads.</p>
+
+    <p style="text-decoration: underline">one thread</p>
+    <p>First things first is to implement it using only one thread.</p>
+    <div class="code-container">
+        <div class="code-title">mutex.go</div>
+        <div class="code-block">
+            <pre>
+<code>
+    func Serial(url string, fetcher Fetcher, fetched map[string]bool) {
+        if fetched[url] {
+            return
+        }
+
+        fetched[url] = true
+        urls, err := fetcher(url)
+        if err != nil {
+            return
+        }
+        for _, u := range urls {
+            Serial(u, fetcher, fetched)
+        }
+        return
+    }
+</code>
+            </pre>
+        </div>
+    </div>
+    The code follows this order:
+    <ol>
+        <li>Check if the given url has already been viewed by checking the fetched map.</li>
+        <li>If it hasn't, continue and set the map to have the current url viewed.</li>
+        <li>Fetch the urls inside the current url using the Fetcher.</li>
+        <li>Loop through each of the urls with the current method. </li>
+    </ol>
+    <p>This code will sequentially go through each of the url links on by one, updating the shared fetched map each time.</p>
+    <p>This code only has one thread and doesn't need to worry about any race issues with the fetched map because there is only one thread accessing it at all times.</p>
+
+    <p style="text-decoration: underline">multithreading</p>
+    <p>The problem with that implementation is that it is slow. With only one thread, we can only process one url at a time. If we want to crawl the internet, only crawling one link at a time
+    would be extremely slow.</p>
+    <p>So in order to process multiple urls at the same time, we need to open a goroutine for each of the urls we come across.</p>
+    <p>Let's try opening a go routine instead for the code. </p>
+    <div class="code-container">
+        <div class="code-title">mutex.go</div>
+        <div class="code-block">
+            <pre>
+<code>
+    func Serial(url string, fetcher Fetcher, fetched map[string]bool) {
+        if fetched[url] {
+            return
+        }
+
+        fetched[url] = true
+        urls, err := fetcher(url)
+        if err != nil {
+            return
+        }
+        for _, u := range urls {
+            go Serial(u, fetcher, fetched)
+        }
+        return
+    }
+</code>
+            </pre>
+        </div>
+    </div>
+
+    <p>There comes two problems with multithreading in this problem:</p>
+    <ul>
+        <li>How do we safely access shared data (the map)?</li>
+        <li>When do we know when to stop and how do we stop?</li>
+    </ul>
+    <p>Luckily, we already learned how to safely acess shared data using mutexes</p>
+    <p>The problem now is that how can we make sure that when to stop?</p>
+    <p>We can use one of two options:</p>
+    <ul>
+        <li>WaitGroups</li>
+        <li>Channels</li>
+    </ul>
+
+</div>
+</body>
+</html>
